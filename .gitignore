@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+
+# Environment Variables & Secrets (Keep API keys private!)
+.env
+.env.local
+
+# Database
+civic_resolve.db
+*.sqlite3
+
+# Uploaded Files during testing
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Node.js
+node_modules/
+dist/
+build/
+.npm
+.eslintcache
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
