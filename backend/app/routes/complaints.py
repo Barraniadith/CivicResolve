@@ -87,9 +87,19 @@ def get_complaints(
     status: Optional[str] = Query(None, description="Filter by status: Reported, In Progress, Resolved"),
     urgency: Optional[str] = Query(None, description="Filter by urgency: Critical, High, Medium, Low"),
     department: Optional[str] = Query(None, description="Filter by department"),
-    search: Optional[str] = Query(None, description="Search keyword in title, description, or location")
+    search: Optional[str] = Query(None, description="Search keyword in title, description, or location"),
+    limit: int = Query(100, ge=1, le=500, description="Pagination limit (max 500)"),
+    offset: int = Query(0, ge=0, description="Pagination offset")
 ):
-    return fetch_all_complaints(status=status, urgency=urgency, department=department, search=search)
+    """Retrieve grievances with optional filters and efficient pagination."""
+    return fetch_all_complaints(
+        status=status,
+        urgency=urgency,
+        department=department,
+        search=search,
+        limit=limit,
+        offset=offset
+    )
 
 
 @router.post("", response_model=ComplaintResponse)

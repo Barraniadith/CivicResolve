@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "civic_resolve.db")
@@ -74,7 +74,9 @@ def fetch_all_complaints(
     status: Optional[str] = None,
     urgency: Optional[str] = None,
     department: Optional[str] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0
 ) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
@@ -96,7 +98,8 @@ def fetch_all_complaints(
         query += " AND (title LIKE ? OR description LIKE ? OR location_name LIKE ? OR id LIKE ?)"
         params.extend([s, s, s, s])
 
-    query += " ORDER BY created_at DESC"
+    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    params.extend([max(1, min(limit, 500)), max(0, offset)])
     cursor.execute(query, params)
     rows = cursor.fetchall()
 
@@ -141,13 +144,26 @@ def insert_complaint(data: Dict[str, Any]) -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
 
-    if "upvotes" not in data:
-        data["upvotes"] = 1
-    if "satisfaction_rating" not in data:
-        data["satisfaction_rating"] = None
+    default_fields = {
+        "upvotes": 1,
+        "satisfaction_rating": None,
+        "image_url": None,
+        "citizen_name": "Anonymous Citizen",
+        "citizen_phone": None,
+        "ai_confidence": 0.85,
+        "ai_reasoning": "",
+        "assigned_officer": None,
+        "resolution_notes": None,
+        "resolution_image_url": None,
+        "public_impact_score": 3,
+        "urgency": "Medium"
+    }
+    for k, v in default_fields.items():
+        if k not in data:
+            data[k] = v
 
     cursor.execute("""
-    INSERT INTO complaints (
+    INSERT OR REPLACE INTO complaints (
         id, title, description, location_name, latitude, longitude, image_url,
         citizen_name, citizen_phone, category, urgency, public_impact_score,
         department, ai_confidence, ai_reasoning, status, assigned_officer,
@@ -169,7 +185,7 @@ def insert_complaint(data: Dict[str, Any]) -> Dict[str, Any]:
 def insert_audit_log(complaint_id: str, action: str, actor: str, details: str, timestamp: Optional[str] = None):
     conn = get_connection()
     cursor = conn.cursor()
-    ts = timestamp or datetime.utcnow().isoformat()
+    ts = timestamp or datetime.now(timezone.utc).isoformat()
     cursor.execute("""
     INSERT INTO audit_logs (complaint_id, action, actor, details, timestamp)
     VALUES (?, ?, ?, ?, ?)
@@ -181,7 +197,7 @@ def update_complaint_fields(complaint_id: str, updates: Dict[str, Any]) -> Optio
     conn = get_connection()
     cursor = conn.cursor()
     
-    updates["updated_at"] = datetime.utcnow().isoformat()
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
     params = list(updates.values()) + [complaint_id]
 
@@ -218,7 +234,16 @@ def rate_complaint_resolution(complaint_id: str, rating: int, feedback: Optional
     )
     return fetch_complaint_by_id(complaint_id)
 
+_STATS_CACHE: Optional[Dict[str, Any]] = None
+_STATS_CACHE_TIME: float = 0.0
+
 def get_stats_data() -> Dict[str, Any]:
+    global _STATS_CACHE, _STATS_CACHE_TIME
+    import time
+    now = time.time()
+    if _STATS_CACHE is not None and (now - _STATS_CACHE_TIME) < 5.0:
+        return _STATS_CACHE
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -253,7 +278,7 @@ def get_stats_data() -> Dict[str, Any]:
     avg_satisfaction = round(avg_sat_row, 1) if avg_sat_row else 4.8
 
     conn.close()
-    return {
+    res = {
         "total_complaints": total,
         "reported_count": reported,
         "in_progress_count": in_progress,
@@ -264,6 +289,9 @@ def get_stats_data() -> Dict[str, Any]:
         "category_breakdown": cat_breakdown,
         "avg_satisfaction": avg_satisfaction
     }
+    _STATS_CACHE = res
+    _STATS_CACHE_TIME = now
+    return res
 
 def count_complaints() -> int:
     conn = get_connection()

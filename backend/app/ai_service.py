@@ -3,6 +3,7 @@ import re
 import json
 import base64
 from io import BytesIO
+from functools import lru_cache
 from typing import Dict, Any, Optional
 
 # Supported Civic Categories
@@ -27,11 +28,9 @@ DEPARTMENTS = {
     "Other Civic Grievance": "CCMC - Public Grievance Redressal Cell"
 }
 
-def analyze_with_heuristics(title: str, description: str, location: str) -> Dict[str, Any]:
-    """
-    Intelligent local heuristic fallback engine.
-    Ensures 100% demo uptime and resilience even without an active internet connection or Gemini API key.
-    """
+@lru_cache(maxsize=256)
+def _cached_heuristic_calc(title: str, description: str, location: str) -> str:
+    """Internal LRU-cached heuristic execution returning JSON string."""
     text = f"{title} {description} {location}".lower()
     
     # Category Matching
@@ -93,7 +92,7 @@ def analyze_with_heuristics(title: str, description: str, location: str) -> Dict
         f"Routed to {department}."
     )
 
-    return {
+    data = {
         "category": category,
         "urgency": urgency,
         "public_impact_score": impact,
@@ -104,6 +103,19 @@ def analyze_with_heuristics(title: str, description: str, location: str) -> Dict
         "hazard_flags": hazard_flags,
         "is_fallback": True
     }
+    return json.dumps(data)
+
+def analyze_with_heuristics(title: str, description: str, location: str) -> Dict[str, Any]:
+    """
+    Intelligent local heuristic fallback engine backed by an in-memory LRU cache.
+    Ensures 100% demo uptime and sub-millisecond efficiency.
+    """
+    res_str = _cached_heuristic_calc(
+        (title or "").strip().lower(),
+        (description or "").strip().lower(),
+        (location or "").strip().lower()
+    )
+    return json.loads(res_str)
 
 
 def analyze_grievance_with_gemini(
